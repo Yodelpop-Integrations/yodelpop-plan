@@ -1,7 +1,6 @@
 /* eslint-disable */
 import { useState, useEffect } from "react";
 
-// ── Constants ────────────────────────────────────────────────────────────────
 const STAGE_ORDER = ["Setup", "Foundation", "TOFU", "MOFU", "BOFU", "DEFU", "Foundational"];
 const STAGE_COLORS = {
   Setup:       { bg: "#0f1f2e", accent: "#3b9eff", label: "Setup" },
@@ -27,66 +26,67 @@ const HUB_COLORS = {
 
 const fmt = (n) => n ? "$" + Number(n).toLocaleString() : "—";
 
-// ── Main App ─────────────────────────────────────────────────────────────────
-export default function App() {
-  const [products, setProducts]         = useState([]);
-  const [loading, setLoading]           = useState(true);
-  const [error, setError]               = useState(null);
-  const [selected, setSelected]         = useState({});   // id -> product
-  const [clientName, setClientName]     = useState("");
-  const [notes, setNotes]               = useState("");
-  const [filterHub, setFilterHub]       = useState("All Hubs");
-  const [filterType, setFilterType]     = useState("All Types");
-  const [search, setSearch]             = useState("");
-  const [output, setOutput]             = useState(null);
-  const [generating, setGenerating]     = useState(false);
-  const [pushing, setPushing]           = useState(false);
-  const [pushed, setPushed]             = useState(false);
-  const [copied, setCopied]             = useState(false);
-  const [view, setView]                 = useState("select"); // select | results
+async function callProxy(type, body) {
+  const res = await fetch("/api/proxy", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type, body }),
+  });
+  return res.json();
+}
 
-  // ── Load products from HubSpot via Anthropic API ──────────────────────────
+export default function App() {
+  const [products, setProducts]     = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState(null);
+  const [selected, setSelected]     = useState({});
+  const [clientName, setClientName] = useState("");
+  const [notes, setNotes]           = useState("");
+  const [filterHub, setFilterHub]   = useState("All Hubs");
+  const [filterType, setFilterType] = useState("All Types");
+  const [search, setSearch]         = useState("");
+  const [output, setOutput]         = useState(null);
+  const [generating, setGenerating] = useState(false);
+  const [pushing, setPushing]       = useState(false);
+  const [pushed, setPushed]         = useState(false);
+  const [copied, setCopied]         = useState(false);
+  const [view, setView]             = useState("select");
+
+  // Load products directly from HubSpot API
   useEffect(() => {
     async function loadProducts() {
       try {
         const allProducts = [];
-        let offset = 0;
-        const limit = 100;
-        let total = Infinity;
+        let after = 0;
+        let hasMore = true;
 
-        while (allProducts.length < total) {
-          const res = await fetch("/api/proxy", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model: "claude-sonnet-4-20250514",
-              max_tokens: 4000,
-              mcp_servers: [{ type: "url", url: "https://mcp.hubspot.com/anthropic", name: "hubspot" }],
-              system: `You are a HubSpot data assistant. When asked to fetch products, call the search_crm_objects tool with objectType "products" and return ALL results as a JSON array. Each item should have: id, name, price, description, hub, stage, type, enterprise_only, process_step, recurringbillingfrequency. Return ONLY valid JSON array, no markdown.`,
-              messages: [{
-                role: "user",
-                content: `Fetch products from HubSpot with offset ${offset} and limit ${limit}. Properties needed: name, price, description, hub, stage, type, enterprise_only, process_step, recurringbillingfrequency, hs_folder_name. Return as JSON array with fields: id, name, price, description, hub, stage, type, enterprise_only, process_step, billing_frequency, folder. Also include total count as first element like {"total": N} before the array. Format: [{"total":N}, {...product...}, ...]`
-              }]
-            })
-          });
+        while (hasMore) {
+          const data = await callProxy("hubspot_products", { offset: after, limit: 100 });
 
-          const data = await res.json();
-          const text = data.content?.filter(b => b.type === "text").map(b => b.text).join("") || "[]";
-          const clean = text.replace(/```json|```/g, "").trim();
+          if (data.results) {
+            const mapped = data.results.map(r => ({
+              id:            r.id,
+              name:          r.properties.name,
+              price:         r.properties.price,
+              description:   r.properties.description,
+              hub:           r.properties.hub,
+              stage:         r.properties.stage,
+              type:          r.properties.type,
+              enterprise_only: r.properties.enterprise_only,
+              process_step:  r.properties.process_step,
+              billing_freq:  r.properties.recurringbillingfrequency,
+              folder:        r.properties.hs_folder_name,
+            }));
+            allProducts.push(...mapped);
 
-          let parsed;
-          try { parsed = JSON.parse(clean); } catch { break; }
-
-          if (parsed[0]?.total !== undefined) {
-            total = parsed[0].total;
-            parsed = parsed.slice(1);
+            if (data.paging?.next?.after) {
+              after = data.paging.next.after;
+            } else {
+              hasMore = false;
+            }
           } else {
-            total = parsed.length;
+            hasMore = false;
           }
-
-          allProducts.push(...parsed);
-          offset += limit;
-          if (parsed.length < limit) break;
         }
 
         setProducts(allProducts.filter(p => p.name));
@@ -99,9 +99,7 @@ export default function App() {
     loadProducts();
   }, []);
 
-  // ── Derived state ──────────────────────────────────────────────────────────
   const hubs = ["All Hubs", ...HUB_ORDER.filter(h => products.some(p => p.hub === h))];
-  const types = ["All Types", "Technical Setup", "Strategic & Content"];
 
   const filtered = products.filter(p => {
     if (filterHub !== "All Hubs" && p.hub !== filterHub) return false;
@@ -110,7 +108,6 @@ export default function App() {
     return true;
   });
 
-  // Group by stage then hub
   const grouped = {};
   for (const stage of STAGE_ORDER) {
     const stageProds = filtered.filter(p => p.stage === stage || (stage === "Foundation" && p.stage === "Foundational"));
@@ -135,7 +132,6 @@ export default function App() {
     });
   }
 
-  // ── Generate scope ─────────────────────────────────────────────────────────
   async function generate() {
     if (totalSelected === 0) return;
     setGenerating(true);
@@ -162,16 +158,11 @@ Write a professional scope narrative in 3 paragraphs:
 Tone: confident, consultative, strategic partner — not a vendor. No bullet points. No "We'll" or "We will". No mention of hourly rates.`;
 
     try {
-      const res = await fetch("/api/proxy", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          messages: [{ role: "user", content: prompt }]
-        })
+      const data = await callProxy("anthropic", {
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        messages: [{ role: "user", content: prompt }]
       });
-      const data = await res.json();
       const narrative = data.content?.filter(b => b.type === "text").map(b => b.text).join("") || "Could not generate scope.";
       setOutput({ narrative, totalPrice, items: selectedList });
       setView("results");
@@ -181,36 +172,20 @@ Tone: confident, consultative, strategic partner — not a vendor. No bullet poi
     setGenerating(false);
   }
 
-  // ── Push quote to HubSpot ──────────────────────────────────────────────────
   async function pushToHubSpot() {
     if (!output || pushed) return;
     setPushing(true);
 
-    const lineItems = selectedList.map(p => ({
-      name: p.name,
-      price: p.price,
-      quantity: 1,
-      hs_product_id: p.id,
-    }));
-
-    const prompt = `Create a HubSpot quote for client "${clientName || "Prospect"}" with these line items: ${JSON.stringify(lineItems)}. Use the manage_crm_objects tool to create a Deal first, then associate the products as line items. Deal name: "${clientName || "New Prospect"} — Yodelpop Engagement". Deal stage: "appointmentscheduled". Return a confirmation with the deal ID.`;
+    const prompt = `Create a HubSpot deal for client "${clientName || "Prospect"}" with deal name "${clientName || "New Prospect"} — Yodelpop Engagement". Set dealstage to "appointmentscheduled" and pipeline to "default". Use the manage_crm_objects tool. Return the deal ID.`;
 
     try {
-      const res = await fetch("/api/proxy", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 2000,
-          mcp_servers: [{ type: "url", url: "https://mcp.hubspot.com/anthropic", name: "hubspot" }],
-          messages: [{ role: "user", content: prompt }]
-        })
+      await callProxy("anthropic", {
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 500,
+        messages: [{ role: "user", content: prompt }]
       });
-      await res.json();
       setPushed(true);
-    } catch {
-      // silent fail — user can retry
-    }
+    } catch {}
     setPushing(false);
   }
 
@@ -227,7 +202,6 @@ Tone: confident, consultative, strategic partner — not a vendor. No bullet poi
     setNotes(""); setPushed(false); setView("select");
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif", background: "#080809", minHeight: "100vh", color: "#e2dfd9" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -257,10 +231,8 @@ Tone: confident, consultative, strategic partner — not a vendor. No bullet poi
         .fu{animation:fadeUp .3s ease forwards}
         @keyframes spin{to{transform:rotate(360deg)}}
         .spinner{width:18px;height:18px;border:2px solid #333;border-top-color:#FF7A59;border-radius:50%;animation:spin .8s linear infinite;display:inline-block}
-        .hub-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;font-size:10px;font-family:'DM Mono',monospace}
         .narrative-box{background:#0e0e0f;border:1px solid #1a1a1b;border-radius:11px;padding:26px 30px;line-height:1.85;color:#b8b4ae;font-size:14px}
         .narrative-box p+p{margin-top:16px}
-        .sec-header{display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #151516}
       `}</style>
 
       {/* Top bar */}
@@ -285,7 +257,6 @@ Tone: confident, consultative, strategic partner — not a vendor. No bullet poi
         </div>
       </div>
 
-      {/* Loading */}
       {loading && (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "60vh", gap: 16 }}>
           <div className="spinner" style={{ width: 32, height: 32 }} />
@@ -293,18 +264,15 @@ Tone: confident, consultative, strategic partner — not a vendor. No bullet poi
         </div>
       )}
 
-      {/* Error */}
       {error && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh" }}>
-          <div style={{ color: "#c04040", fontSize: 14, textAlign: "center" }}>{error}</div>
+          <div style={{ color: "#c04040", fontSize: 14, textAlign: "center", maxWidth: 400 }}>{error}</div>
         </div>
       )}
 
-      {/* Selection view */}
       {!loading && !error && view === "select" && (
         <div style={{ maxWidth: 920, margin: "0 auto", padding: "24px 20px", display: "flex", flexDirection: "column", gap: 20 }}>
 
-          {/* Client + notes */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <label style={{ fontSize: 10, color: "#444", textTransform: "uppercase", letterSpacing: "1.2px", fontFamily: "'DM Mono', monospace", display: "block", marginBottom: 7 }}>Client / Prospect</label>
@@ -312,11 +280,10 @@ Tone: confident, consultative, strategic partner — not a vendor. No bullet poi
             </div>
             <div>
               <label style={{ fontSize: 10, color: "#444", textTransform: "uppercase", letterSpacing: "1.2px", fontFamily: "'DM Mono', monospace", display: "block", marginBottom: 7 }}>Context for AI <span style={{ color: "#222" }}>(optional)</span></label>
-              <input type="text" value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g. Migrating from Salesforce, 3k contacts, B2B..." style={{ width: "100%" }} />
+              <input type="text" value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g. Migrating from Salesforce, 3k contacts..." style={{ width: "100%" }} />
             </div>
           </div>
 
-          {/* Filters */}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search services..." style={{ width: 200, fontSize: 12, padding: "6px 12px" }} />
             <div style={{ width: 1, height: 20, background: "#1e1e20" }} />
@@ -327,14 +294,11 @@ Tone: confident, consultative, strategic partner — not a vendor. No bullet poi
               </button>
             ))}
             <div style={{ width: 1, height: 20, background: "#1e1e20" }} />
-            {types.map(t => (
-              <button key={t} className={`filter-btn${filterType === t ? " active" : ""}`} onClick={() => setFilterType(t)}>
-                {t === "Technical Setup" ? "⚙️ Setup" : t === "Strategic & Content" ? "🎯 Strategy" : t}
-              </button>
-            ))}
+            <button className={`filter-btn${filterType === "All Types" ? " active" : ""}`} onClick={() => setFilterType("All Types")}>All Types</button>
+            <button className={`filter-btn${filterType === "Technical Setup" ? " active" : ""}`} onClick={() => setFilterType("Technical Setup")}>⚙️ Setup</button>
+            <button className={`filter-btn${filterType === "Strategic & Content" ? " active" : ""}`} onClick={() => setFilterType("Strategic & Content")}>🎯 Strategy</button>
           </div>
 
-          {/* Products grouped by stage → hub */}
           {Object.entries(grouped).map(([stage, hubMap]) => {
             const sc = STAGE_COLORS[stage] || STAGE_COLORS.Foundation;
             return (
@@ -361,7 +325,7 @@ Tone: confident, consultative, strategic partner — not a vendor. No bullet poi
                               <div style={{ display: "flex", gap: 6, marginTop: 4, alignItems: "center" }}>
                                 <span style={{ fontSize: 10, color: on ? ac : "#444", fontFamily: "'DM Mono', monospace" }}>{fmt(p.price)}</span>
                                 {p.type && <span style={{ fontSize: 9, color: "#333" }}>{TYPE_ICONS[p.type]}</span>}
-                                {p.enterprise_only === "true" || p.enterprise_only === true ? <span style={{ fontSize: 9, color: "#f5c842" }}>ENT</span> : null}
+                                {(p.enterprise_only === "true" || p.enterprise_only === true) && <span style={{ fontSize: 9, color: "#f5c842" }}>ENT</span>}
                               </div>
                             </div>
                           </button>
@@ -374,7 +338,6 @@ Tone: confident, consultative, strategic partner — not a vendor. No bullet poi
             );
           })}
 
-          {/* Live estimate + CTA */}
           {totalSelected > 0 && (
             <div className="fu" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
@@ -403,11 +366,9 @@ Tone: confident, consultative, strategic partner — not a vendor. No bullet poi
         </div>
       )}
 
-      {/* Results view */}
       {view === "results" && output && !output.error && (
         <div className="fu" style={{ maxWidth: 820, margin: "0 auto", padding: "28px 20px", display: "flex", flexDirection: "column", gap: 20 }}>
 
-          {/* Investment banner */}
           <div style={{ background: "#0c1a12", border: "1px solid #1a3524", borderRadius: 12, padding: "20px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
               <div style={{ fontSize: 10, color: "#4a9e65", textTransform: "uppercase", letterSpacing: "1.2px", fontFamily: "'DM Mono', monospace", marginBottom: 5 }}>
@@ -421,7 +382,6 @@ Tone: confident, consultative, strategic partner — not a vendor. No bullet poi
             </div>
           </div>
 
-          {/* Line items */}
           <div style={{ background: "#0e0e0f", border: "1px solid #1a1a1b", borderRadius: 11, overflow: "hidden" }}>
             <div style={{ padding: "14px 20px", borderBottom: "1px solid #141415" }}>
               <span style={{ fontSize: 10, color: "#444", textTransform: "uppercase", letterSpacing: "1.2px", fontFamily: "'DM Mono', monospace" }}>Line Items</span>
@@ -442,7 +402,6 @@ Tone: confident, consultative, strategic partner — not a vendor. No bullet poi
             </div>
           </div>
 
-          {/* Scope narrative */}
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <span style={{ fontSize: 10, color: "#444", textTransform: "uppercase", letterSpacing: "1.2px", fontFamily: "'DM Mono', monospace" }}>Scope Narrative</span>
@@ -455,14 +414,7 @@ Tone: confident, consultative, strategic partner — not a vendor. No bullet poi
             </div>
           </div>
 
-          {/* Actions */}
           <div style={{ display: "flex", gap: 12, justifyContent: "center", paddingBottom: 16 }}>
-            <button
-              onClick={pushToHubSpot}
-              disabled={pushing || pushed}
-              style={{ padding: "11px 28px", borderRadius: 9, border: "none", cursor: pushed ? "default" : "pointer", background: pushed ? "#1a3524" : "#0f2a3a", color: pushed ? "#4a9e65" : "#3b9eff", fontSize: 14, fontWeight: 600, fontFamily: "'DM Sans', sans-serif", transition: "all .18s", display: "flex", alignItems: "center", gap: 8 }}>
-              {pushing ? <><span className="spinner" /> Pushing to HubSpot...</> : pushed ? "✓ Deal Created in HubSpot" : "Push to HubSpot →"}
-            </button>
             <button onClick={reset} style={{ background: "transparent", border: "none", color: "#333", cursor: "pointer", fontSize: 13, fontFamily: "'DM Sans', sans-serif" }}>
               ↩ Start over
             </button>
