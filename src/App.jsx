@@ -55,7 +55,7 @@ export default function App() {
         let total = Infinity;
 
         while (allProducts.length < total) {
-          const res = await fetch("https://api.anthropic.com/v1/messages", {
+          const res = await fetch("/api/proxy", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -162,7 +162,7 @@ Write a professional scope narrative in 3 paragraphs:
 Tone: confident, consultative, strategic partner — not a vendor. No bullet points. No "We'll" or "We will". No mention of hourly rates.`;
 
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/proxy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -196,7 +196,7 @@ Tone: confident, consultative, strategic partner — not a vendor. No bullet poi
     const prompt = `Create a HubSpot quote for client "${clientName || "Prospect"}" with these line items: ${JSON.stringify(lineItems)}. Use the manage_crm_objects tool to create a Deal first, then associate the products as line items. Deal name: "${clientName || "New Prospect"} — Yodelpop Engagement". Deal stage: "appointmentscheduled". Return a confirmation with the deal ID.`;
 
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/proxy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
