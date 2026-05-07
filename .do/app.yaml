@@ -1,0 +1,16 @@
+name: yodelpop-plan
+region: nyc
+static_sites:
+  - name: blueprint
+    source_dir: /
+    github:
+      repo: YOUR_GITHUB_USERNAME/yodelpop-plan
+      branch: main
+      deploy_on_push: true
+    build_command: npm install && npm run build
+    output_dir: build
+    envs:
+      - key: REACT_APP_NAME
+        value: "Yodelpop Plan"
+    routes:
+      - path: /
