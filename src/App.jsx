@@ -395,18 +395,13 @@ Tone: confident, consultative, strategic partner — not a vendor. No bullet poi
         background: BRAND.bg,
         position: "sticky", top: 0, zIndex: 20,
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        height: 60,
+        height: 76,
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <div style={{
-            width: 32, height: 32,
-            background: `linear-gradient(135deg, ${BRAND.coral}, ${BRAND.sky})`,
-            borderRadius: 8,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 15, fontWeight: 700, color: BRAND.white,
-          }}>Y</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+          <img src="/logo.svg" alt="Yodelpop" style={{ height: 38, width: "auto" }} />
+          <div style={{ width: 1, height: 38, background: BRAND.border }} />
           <div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: BRAND.white, letterSpacing: "-0.3px" }}>Yodelpop Plan</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: BRAND.textMid, letterSpacing: "0.5px" }}>Services Planner</div>
             <div style={{ fontSize: 11, color: BRAND.textDim, marginTop: 1 }}>
               {loading ? "Loading services..." : `${products.length} services · Live from HubSpot`}
             </div>
