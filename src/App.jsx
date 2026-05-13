@@ -335,17 +335,7 @@ Tone: confident, consultative, strategic partner. No bullet points. No "We'll" o
         objectType: "deals",
         properties: {
           dealname: `${clientName || "Prospect"} — Yodelpop Engagement`,
-          dealstage: {
-            "17447049": "17447053",   // Project -> Decision maker Bought-In
-            "768263196": "1121446667", // HubSpot Implementation -> Appointment Scheduled
-            "85604774": "159912568",  // Retainer -> Appointment Scheduled
-            "2193488": "7792500",     // Course -> Qualified to buy
-            "3558692": "12066410",    // RaiserSync -> Inquiry
-            "768263210": "1121446815", // YourMemberSync -> Subscribed
-            "779099780": "1138155899", // Custom Integration -> Appointment Scheduled
-            "4483255": "14597203",    // Website -> Appointment Scheduled
-            "16418228": "42468383",   // Lifeline -> Purchased
-          }[selectedPipeline] || "1121446667",
+
           pipeline: selectedPipeline,
           amount: String(output.totalPrice),
         }
