@@ -142,65 +142,81 @@ export default function App() {
     setAgentError(null);
     setAwaitingClarification(false);
 
-    const productCatalog = products
+    // Step 1: Use keywords from notes to filter catalog to most relevant products
+    // This keeps the prompt size manageable
+    const notesLower = callNotes.toLowerCase();
+    const keywords = [
+      'crm','hubspot','workflow','email','template','form','list','segment',
+      'pipeline','deal','sequence','blog','content','social','report','dashboard',
+      'custom object','migration','import','training','onboarding','aeo','pillar',
+      'ebook','lead','nurture','scoring','playbook','snippet','meeting','calendar',
+      'payment','integration','api','sync','automation','landing page','cta',
+      'marketing','sales','service','ticket','knowledge','survey','feedback',
+      'permission','gdpr','compliance','domain','chat','chatflow','persona',
+      'association','lifecycle','contact','company','quote','product library',
+      'forecasting','ads','raiser','raisersync','yourmember','gameplan','blueprint',
+      'audit','strategy','infographic','video','checklist','conversion','popup'
+    ];
+
+    // Score each product by how relevant it is to the notes
+    const scoredProducts = products
       .filter(p => p.name && p.price)
-      .map(p => `ID:${p.id} | ${p.name} | $${p.price} | ${p.hub || ""} | ${p.stage || ""} | ${p.type || ""}`)
+      .map(p => {
+        const nameLower = p.name.toLowerCase();
+        const hubLower = (p.hub || "").toLowerCase();
+        let score = 0;
+        keywords.forEach(kw => {
+          if (notesLower.includes(kw) && nameLower.includes(kw)) score += 3;
+          if (notesLower.includes(kw) && hubLower.includes(kw)) score += 1;
+        });
+        return { ...p, score };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    // Take top 80 most relevant + always include core setup items
+    const topProducts = scoredProducts.slice(0, 80);
+    const productCatalog = topProducts
+      .map(p => `${p.id}|${p.name}|${p.price}|${p.hub||""}`)
       .join("\n");
 
     const answersBlock = answersProvided
-      ? `\n\nClarification answers provided:\n${Object.entries(answersProvided).map(([q,a]) => `Q: ${q}\nA: ${a}`).join("\n\n")}`
+      ? `\nClarification answers:\n${Object.entries(answersProvided).map(([q,a]) => `Q: ${q}\nA: ${a}`).join("\n")}`
       : "";
 
-    const prompt = `You are a HubSpot scoping expert at Yodelpop, a nonprofit marketing agency. 
-Your job is to read call notes and select the right services from the product catalog to build an accurate scope.
+    // Keep call notes to 3000 chars max to avoid token limits
+    const truncatedNotes = callNotes.length > 3000
+      ? callNotes.slice(0, 3000) + "\n[...notes truncated for length]"
+      : callNotes;
+
+    const prompt = `You are a HubSpot scoping expert at Yodelpop nonprofit marketing agency. Read the call notes and select matching services from the catalog.
 
 CALL NOTES:
-${callNotes}
-${clientName ? `\nClient: ${clientName}` : ""}
+${truncatedNotes}
+${clientName ? `Client: ${clientName}` : ""}
 ${answersBlock}
 
-PRODUCT CATALOG (ID | Name | Price | Hub | Stage | Type):
+PRODUCT CATALOG (id|name|price|hub) - top relevant items:
 ${productCatalog}
 
-INSTRUCTIONS:
-1. Read the call notes carefully
-2. Select the most appropriate services from the catalog that match what was discussed
-3. For per-unit items (labeled "per post", "per sequence", "per workflow", etc.), estimate the quantity based on the notes
-4. If there are ambiguities that significantly affect the scope or price, list up to 3 clarifying questions
-5. Provide a brief reasoning for each selected service
+Select the services that match what was discussed. For per-unit items estimate quantity from notes. If critical info is missing ask up to 3 questions.
 
-RESPOND WITH VALID JSON ONLY in this exact format:
-{
-  "needs_clarification": false,
-  "clarifying_questions": [],
-  "selected_services": [
-    {
-      "id": "product_id",
-      "name": "product name",
-      "qty": 1,
-      "price": 1797,
-      "reasoning": "brief explanation why this was selected"
-    }
-  ],
-  "summary": "2-3 sentence summary of what was scoped and why",
-  "confidence": "high|medium|low",
-  "confidence_note": "brief note on confidence level"
-}
+RESPOND WITH ONLY THIS JSON STRUCTURE - NO OTHER TEXT:
+{"needs_clarification":false,"clarifying_questions":[],"selected_services":[{"id":"id","name":"name","qty":1,"price":0,"reasoning":"why"}],"summary":"summary here","confidence":"high","confidence_note":"note"}`;
 
-If you need clarification set needs_clarification to true and list questions in clarifying_questions array. Keep selected_services empty if clarification is needed.`;
-
+    let text = "";
     try {
       const data = await callProxy("anthropic", {
         model: "claude-sonnet-4-20250514",
-        max_tokens: 3000,
+        max_tokens: 4000,
         messages: [{ role: "user", content: prompt }]
       });
 
-      const text = data.content?.filter(b => b.type === "text").map(b => b.text).join("") || "";
-      // Robustly extract JSON — find the first { and last }
+      text = data.content?.filter(b => b.type === "text").map(b => b.text).join("") || "";
+
+      // Robustly extract JSON
       const firstBrace = text.indexOf("{");
       const lastBrace = text.lastIndexOf("}");
-      if (firstBrace === -1 || lastBrace === -1) throw new Error("No JSON found in response");
+      if (firstBrace === -1 || lastBrace === -1) throw new Error("No JSON in response: " + text.slice(0, 150));
       const clean = text.slice(firstBrace, lastBrace + 1);
       const parsed = JSON.parse(clean);
 
@@ -226,21 +242,19 @@ If you need clarification set needs_clarification to true and list questions in 
         confidence_note: parsed.confidence_note,
       });
 
-      // Auto-populate the selected state so the regular scope generator works
       const newSelected = {};
       matched.forEach(item => {
         newSelected[item.product.id] = { product: item.product, qty: item.qty };
       });
       setSelected(newSelected);
-      if (clientName) setClientName(clientName);
 
     } catch (e) {
-      setAgentError("Could not parse the agent response. Try again or simplify your notes.");
+      setAgentError("Error: " + e.message + (text ? " | Response: " + text.slice(0, 200) : ""));
     }
     setAgentLoading(false);
   }
 
-  async function submitClarifications() {
+    async function submitClarifications() {
     await runAgent(clarificationAnswers);
   }
 
