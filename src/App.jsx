@@ -809,7 +809,7 @@ Tone: confident, consultative, strategic partner. No bullet points. No "We'll" o
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
                 <div style={{ fontSize: 13, color: "#4caf72", fontWeight: 600 }}>✓ Deal created in HubSpot</div>
                 <a
-                  href={`https://app.hubspot.com/contacts/${process.env.REACT_APP_HUBSPOT_PORTAL_ID || ""}/deal/${pushDealId}`}
+                  href={`https://app.hubspot.com/contacts/273929/deal/${pushDealId}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{ fontSize: 12, color: BRAND.sky, textDecoration: "underline", cursor: "pointer" }}>
