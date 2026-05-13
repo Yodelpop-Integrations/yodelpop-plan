@@ -6,7 +6,6 @@ export default async function handler(req, res) {
   const { type, body } = req.body;
 
   try {
-    // HubSpot products fetch
     if (type === 'hubspot_products') {
       const { offset = 0, limit = 100 } = body || {};
       const properties = [
@@ -26,24 +25,40 @@ export default async function handler(req, res) {
       return res.status(response.status).json(data);
     }
 
-    // Anthropic Claude call
     if (type === 'anthropic') {
+      const apiKey = process.env.REACT_APP_ANTHROPIC_API_KEY;
+      if (!apiKey) {
+        return res.status(500).json({ error: 'Anthropic API key not configured', content: [] });
+      }
+
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': process.env.REACT_APP_ANTHROPIC_API_KEY,
+          'x-api-key': apiKey,
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify(body),
       });
+
       const data = await response.json();
-      return res.status(response.status).json(data);
+
+      // If Anthropic returned an error, surface it clearly
+      if (!response.ok || data.error) {
+        return res.status(200).json({
+          content: [{ type: 'text', text: `API_ERROR: ${JSON.stringify(data.error || data)}` }]
+        });
+      }
+
+      return res.status(200).json(data);
     }
 
     return res.status(400).json({ error: 'Unknown request type' });
 
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ 
+      error: error.message,
+      content: [{ type: 'text', text: `PROXY_ERROR: ${error.message}` }]
+    });
   }
 }
