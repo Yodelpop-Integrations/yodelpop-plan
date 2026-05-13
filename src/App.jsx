@@ -138,25 +138,14 @@ export default function App() {
   }
 
   const selectedList  = Object.values(selected);
-  const totalPrice    = selectedList.reduce((s, item) => s + Number(item.product.price || 0) * item.qty, 0);
+  const totalPrice    = selectedList.reduce((s, p) => s + Number(p.price || 0), 0);
   const totalSelected = selectedList.length;
 
   function toggle(product) {
     setSelected(prev => {
       const next = { ...prev };
       if (next[product.id]) delete next[product.id];
-      else next[product.id] = { product, qty: 1 };
-      return next;
-    });
-  }
-
-  function updateQty(productId, delta) {
-    setSelected(prev => {
-      const next = { ...prev };
-      if (!next[productId]) return next;
-      const newQty = next[productId].qty + delta;
-      if (newQty <= 0) delete next[productId];
-      else next[productId] = { ...next[productId], qty: newQty };
+      else next[product.id] = product;
       return next;
     });
   }
@@ -166,8 +155,8 @@ export default function App() {
     setGenerating(true);
     setOutput(null);
 
-    const itemList = selectedList.map(item =>
-      `- ${item.product.name} x${item.qty} (${item.product.hub} | ${item.product.stage} | ${item.product.type}) — ${fmt(Number(item.product.price || 0) * item.qty)}`
+    const itemList = selectedList.map(p =>
+      `- ${p.name} (${p.hub} | ${p.stage} | ${p.type}) — ${fmt(p.price)}`
     ).join("\n");
 
     const prompt = `You are a senior HubSpot implementation consultant at Yodelpop, a boutique nonprofit marketing agency. Write a sharp, client-ready project scope for the following engagement.
@@ -406,13 +395,18 @@ Tone: confident, consultative, strategic partner — not a vendor. No bullet poi
         background: BRAND.bg,
         position: "sticky", top: 0, zIndex: 20,
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        height: 76,
+        height: 60,
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-          <img src="/logo.svg" alt="Yodelpop" style={{ height: 38, width: "auto" }} />
-          <div style={{ width: 1, height: 38, background: BRAND.border }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{
+            width: 32, height: 32,
+            background: `linear-gradient(135deg, ${BRAND.coral}, ${BRAND.sky})`,
+            borderRadius: 8,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 15, fontWeight: 700, color: BRAND.white,
+          }}>Y</div>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: BRAND.textMid, letterSpacing: "0.5px" }}>Services Planner</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: BRAND.white, letterSpacing: "-0.3px" }}>Yodelpop Plan</div>
             <div style={{ fontSize: 11, color: BRAND.textDim, marginTop: 1 }}>
               {loading ? "Loading services..." : `${products.length} services · Live from HubSpot`}
             </div>
@@ -547,28 +541,28 @@ Tone: confident, consultative, strategic partner — not a vendor. No bullet poi
                             const isSelected = !!selected[p.id];
                             const tc = TYPE_CONFIG[p.type] || {};
                             return (
-                              <div
+                              <button
                                 key={p.id}
                                 className={`service-card${isSelected ? " selected" : ""}`}
-                                style={{ "--hub-color": hubColor, cursor: "pointer" }}
+                                style={{ "--hub-color": hubColor }}
+                                onClick={() => toggle(p)}
                                 title={p.description}
                               >
-                                <span className="checkbox" onClick={() => toggle(p)} style={{ cursor: "pointer", flexShrink: 0 }}>{isSelected ? "✓" : ""}</span>
-                                <div style={{ flex: 1, minWidth: 0 }} onClick={() => !isSelected && toggle(p)}>
+                                <span className="checkbox">{isSelected ? "✓" : ""}</span>
+                                <div style={{ flex: 1, minWidth: 0 }}>
                                   <div style={{
                                     fontSize: 13.5,
                                     fontWeight: 500,
                                     color: isSelected ? BRAND.white : BRAND.textMid,
                                     lineHeight: 1.4,
                                     marginBottom: 6,
-                                    cursor: isSelected ? "default" : "pointer",
                                   }}>{p.name}</div>
                                   <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                                     {p.price && (
                                       <span style={{
                                         fontSize: 12, fontWeight: 600,
                                         color: isSelected ? hubColor : BRAND.textDim,
-                                      }}>{isSelected ? fmt(Number(p.price) * selected[p.id].qty) : fmt(p.price)}</span>
+                                      }}>{fmt(p.price)}</span>
                                     )}
                                     {p.type && (
                                       <span style={{
@@ -584,30 +578,7 @@ Tone: confident, consultative, strategic partner — not a vendor. No bullet poi
                                     )}
                                   </div>
                                 </div>
-                                {isSelected && (
-                                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, marginLeft: 6 }} onClick={e => e.stopPropagation()}>
-                                    <button onClick={() => updateQty(p.id, -1)} style={{
-                                      width: 22, height: 22, borderRadius: 4,
-                                      border: `1px solid ${BRAND.borderLight}`,
-                                      background: BRAND.bg, color: BRAND.textMid,
-                                      cursor: "pointer", fontSize: 14, fontWeight: 600,
-                                      display: "flex", alignItems: "center", justifyContent: "center",
-                                      fontFamily: "'Albert Sans', sans-serif", lineHeight: 1,
-                                    }}>−</button>
-                                    <span style={{ fontSize: 13, fontWeight: 600, color: BRAND.white, minWidth: 16, textAlign: "center" }}>
-                                      {selected[p.id].qty}
-                                    </span>
-                                    <button onClick={() => updateQty(p.id, 1)} style={{
-                                      width: 22, height: 22, borderRadius: 4,
-                                      border: `1px solid ${BRAND.borderLight}`,
-                                      background: BRAND.bg, color: BRAND.textMid,
-                                      cursor: "pointer", fontSize: 14, fontWeight: 600,
-                                      display: "flex", alignItems: "center", justifyContent: "center",
-                                      fontFamily: "'Albert Sans', sans-serif", lineHeight: 1,
-                                    }}>+</button>
-                                  </div>
-                                )}
-                              </div>
+                              </button>
                             );
                           })}
                         </div>
@@ -683,11 +654,9 @@ Tone: confident, consultative, strategic partner — not a vendor. No bullet poi
             <div style={{ padding: "14px 20px", borderBottom: `1px solid ${BRAND.border}` }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: BRAND.textDim, textTransform: "uppercase", letterSpacing: "0.8px" }}>Line Items</span>
             </div>
-            {output.items.map((item, i) => {
-              const p = item.product;
+            {output.items.map((p, i) => {
               const hubColor = HUB_COLORS[p.hub] || BRAND.textMid;
               const tc = TYPE_CONFIG[p.type] || {};
-              const lineTotal = Number(p.price || 0) * item.qty;
               return (
                 <div key={p.id} style={{
                   display: "flex", justifyContent: "space-between", alignItems: "center",
@@ -697,10 +666,9 @@ Tone: confident, consultative, strategic partner — not a vendor. No bullet poi
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <div style={{ width: 6, height: 6, borderRadius: "50%", background: hubColor, flexShrink: 0 }} />
                     <span style={{ fontSize: 14, color: BRAND.text }}>{p.name}</span>
-                    {item.qty > 1 && <span style={{ fontSize: 11, color: BRAND.textDim }}>×{item.qty}</span>}
                     {p.type && <span style={{ fontSize: 10, color: tc.color + "66" }}>{tc.icon}</span>}
                   </div>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: BRAND.coral, flexShrink: 0, marginLeft: 16 }}>{fmt(lineTotal)}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: BRAND.coral, flexShrink: 0, marginLeft: 16 }}>{fmt(p.price)}</span>
                 </div>
               );
             })}
