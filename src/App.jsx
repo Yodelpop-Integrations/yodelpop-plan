@@ -197,7 +197,11 @@ If you need clarification set needs_clarification to true and list questions in 
       });
 
       const text = data.content?.filter(b => b.type === "text").map(b => b.text).join("") || "";
-      const clean = text.replace(/```json|```/g, "").trim();
+      // Robustly extract JSON — find the first { and last }
+      const firstBrace = text.indexOf("{");
+      const lastBrace = text.lastIndexOf("}");
+      if (firstBrace === -1 || lastBrace === -1) throw new Error("No JSON found in response");
+      const clean = text.slice(firstBrace, lastBrace + 1);
       const parsed = JSON.parse(clean);
 
       if (parsed.needs_clarification && parsed.clarifying_questions?.length > 0) {
