@@ -17,6 +17,18 @@ const HUB_COLORS  = {
   CRM: "#3b9eff", Marketing: "#FF7A59", Sales: "#00BDA5", Service: "#6b7aed",
   Commerce: "#f5c842", Operations: "#f08c42", All: "#888", "AEO Services": "#b06ef3",
 };
+const PIPELINES = [
+  { id: "17447049",   label: "Project" },
+  { id: "768263196",  label: "HubSpot Implementation" },
+  { id: "85604774",   label: "Retainer" },
+  { id: "2193488",    label: "Course" },
+  { id: "3558692",    label: "RaiserSync" },
+  { id: "768263210",  label: "YourMemberSync" },
+  { id: "779099780",  label: "Custom Integration" },
+  { id: "4483255",    label: "Website" },
+  { id: "16418228",   label: "Lifeline" },
+];
+
 const BRAND = {
   bg: "#0b0b0c", bgCard: "#0e0e0f", bg2: "#131d28", navy: "#425b76",
   sky: "#50badb", teal: "#1bccbb", coral: "#ff715d", border: "#1e1e20",
@@ -48,6 +60,11 @@ export default function App() {
   const [output, setOutput]           = useState(null);
   const [generating, setGenerating]   = useState(false);
   const [copied, setCopied]           = useState(false);
+  const [selectedPipeline, setSelectedPipeline] = useState("768263196"); // default: HubSpot Implementation
+  const [pushing, setPushing]         = useState(false);
+  const [pushed, setPushed]           = useState(false);
+  const [pushError, setPushError]     = useState(null);
+  const [pushDealId, setPushDealId]   = useState(null);
   const [view, setView]               = useState("select");
 
   // Agent mode state
@@ -206,7 +223,7 @@ RESPOND WITH ONLY THIS JSON STRUCTURE - NO OTHER TEXT:
     let text = "";
     try {
       const data = await callProxy("anthropic", {
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-5",
         max_tokens: 4000,
         messages: [{ role: "user", content: prompt }]
       });
@@ -286,7 +303,7 @@ Tone: confident, consultative, strategic partner. No bullet points. No "We'll" o
 
     try {
       const data = await callProxy("anthropic", {
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-5",
         max_tokens: 1000,
         messages: [{ role: "user", content: prompt }]
       });
@@ -306,11 +323,59 @@ Tone: confident, consultative, strategic partner. No bullet points. No "We'll" o
     setTimeout(() => setCopied(false), 2500);
   }
 
+  async function pushToHubSpot() {
+    if (!output) return;
+    setPushing(true);
+    setPushed(false);
+    setPushError(null);
+
+    try {
+      // Step 1: Create the deal
+      const dealData = await callProxy("hubspot_create", {
+        objectType: "deals",
+        properties: {
+          dealname: `${clientName || "Prospect"} — Yodelpop Engagement`,
+          dealstage: "appointmentscheduled",
+          pipeline: selectedPipeline,
+          amount: String(output.totalPrice),
+        }
+      });
+
+      if (!dealData.id) throw new Error("Failed to create deal: " + JSON.stringify(dealData));
+      const dealId = dealData.id;
+
+      // Step 2: Create line items and associate to deal
+      const lineItemPromises = output.items.map(item =>
+        callProxy("hubspot_create", {
+          objectType: "line_items",
+          properties: {
+            name: item.product.name,
+            price: String(item.product.price || 0),
+            quantity: String(item.qty),
+            hs_product_id: item.product.id,
+          },
+          associations: [{
+            to: { id: dealId },
+            types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 20 }]
+          }]
+        })
+      );
+
+      await Promise.all(lineItemPromises);
+      setPushed(true);
+      setPushDealId(dealId);
+    } catch (e) {
+      setPushError(e.message);
+    }
+    setPushing(false);
+  }
+
   function reset() {
     setSelected({}); setOutput(null); setClientName(""); setNotes("");
     setCopied(false); setView("select"); setAgentResult(null);
     setCallNotes(""); setClarifications([]); setClarificationAnswers({});
-    setAwaitingClarification(false);
+    setAwaitingClarification(false); setPushed(false); setPushing(false);
+    setPushError(null); setPushDealId(null);
   }
 
   // ── Styles ────────────────────────────────────────────────────────────────
@@ -717,7 +782,44 @@ Tone: confident, consultative, strategic partner. No bullet points. No "We'll" o
             </div>
           </div>
 
-          <div style={{ display: "flex", justifyContent: "center", paddingBottom: 20 }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, paddingBottom: 20 }}>
+            {!pushed && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+                <label style={{ fontSize: 11, fontWeight: 600, color: BRAND.textDim, textTransform: "uppercase", letterSpacing: "1px", whiteSpace: "nowrap" }}>Pipeline</label>
+                <select
+                  value={selectedPipeline}
+                  onChange={e => setSelectedPipeline(e.target.value)}
+                  style={{ background: BRAND.bgCard, border: `1px solid ${BRAND.border}`, borderRadius: 7, color: BRAND.text, fontFamily: "'Albert Sans', sans-serif", fontSize: 13, padding: "7px 12px", cursor: "pointer", outline: "none" }}>
+                  {PIPELINES.map(p => (
+                    <option key={p.id} value={p.id}>{p.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {!pushed ? (
+              <button
+                onClick={pushToHubSpot}
+                disabled={pushing}
+                style={{ padding: "12px 28px", borderRadius: 9, border: "none", cursor: pushing ? "not-allowed" : "pointer", background: pushing ? BRAND.navy : "#0f3a6e", color: BRAND.sky, fontSize: 14, fontWeight: 600, fontFamily: "'Albert Sans', sans-serif", transition: "all .18s", display: "flex", alignItems: "center", gap: 8, opacity: pushing ? 0.7 : 1 }}>
+                {pushing
+                  ? <><span className="spinner" style={{ borderTopColor: BRAND.sky }} /> Creating deal in HubSpot...</>
+                  : "→ Push to HubSpot as Deal"}
+              </button>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                <div style={{ fontSize: 13, color: "#4caf72", fontWeight: 600 }}>✓ Deal created in HubSpot</div>
+                <a
+                  href={`https://app.hubspot.com/contacts/${process.env.REACT_APP_HUBSPOT_PORTAL_ID || ""}/deal/${pushDealId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ fontSize: 12, color: BRAND.sky, textDecoration: "underline", cursor: "pointer" }}>
+                  Open deal in HubSpot →
+                </a>
+              </div>
+            )}
+            {pushError && (
+              <div style={{ fontSize: 12, color: BRAND.coral, textAlign: "center", maxWidth: 400 }}>Push error: {pushError}</div>
+            )}
             <button onClick={reset} style={{ background: "transparent", border: "none", color: BRAND.textDim, cursor: "pointer", fontSize: 13, fontFamily: "'Albert Sans', sans-serif" }}>
               ↩ Start a new scope
             </button>
